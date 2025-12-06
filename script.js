@@ -1,38 +1,20 @@
-// Store users data in localStorage (simulating a database)
-const USERS_KEY = 'registered_users';
+const API_URL = 'http://localhost:5000/api';
 const CURRENT_USER_KEY = 'current_user';
 
-// Initialize localStorage with sample data if empty
-function initializeStorage() {
-    if (!localStorage.getItem(USERS_KEY)) {
-        localStorage.setItem(USERS_KEY, JSON.stringify([]));
-    }
-}
-
-// Get all registered users
-function getUsers() {
-    return JSON.parse(localStorage.getItem(USERS_KEY)) || [];
-}
-
-// Save users to localStorage
-function saveUsers(users) {
-    localStorage.setItem(USERS_KEY, JSON.stringify(users));
-}
-
-// Get current logged-in user
+// Get current logged-in user from sessionStorage
 function getCurrentUser() {
-    const user = localStorage.getItem(CURRENT_USER_KEY);
+    const user = sessionStorage.getItem(CURRENT_USER_KEY);
     return user ? JSON.parse(user) : null;
 }
 
-// Set current user
+// Set current user in sessionStorage
 function setCurrentUser(user) {
-    localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
+    sessionStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
 }
 
 // Clear current user (logout)
 function clearCurrentUser() {
-    localStorage.removeItem(CURRENT_USER_KEY);
+    sessionStorage.removeItem(CURRENT_USER_KEY);
 }
 
 // Validate email format
@@ -44,12 +26,6 @@ function validateEmail(email) {
 // Validate password strength
 function validatePassword(password) {
     return password.length >= 6;
-}
-
-// Check if email already exists
-function emailExists(email) {
-    const users = getUsers();
-    return users.some(user => user.email === email);
 }
 
 // Toggle between login and registration forms
@@ -73,7 +49,7 @@ function toggleForms() {
 }
 
 // Handle registration
-function handleRegister(event) {
+async function handleRegister(event) {
     event.preventDefault();
 
     const name = document.getElementById('regName').value.trim();
@@ -86,7 +62,7 @@ function handleRegister(event) {
     messageDiv.textContent = '';
     messageDiv.className = 'message';
 
-    // Validation
+    // Client-side validation
     if (!name) {
         showMessage(messageDiv, 'Please enter your full name', 'error');
         return;
@@ -107,38 +83,42 @@ function handleRegister(event) {
         return;
     }
 
-    if (emailExists(email)) {
-        showMessage(messageDiv, 'This email is already registered', 'error');
-        return;
+    try {
+        const response = await fetch(`${API_URL}/register`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                name,
+                email,
+                password,
+                confirmPassword
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showMessage(messageDiv, 'Registration successful! Redirecting to login...', 'success');
+            
+            setTimeout(() => {
+                document.getElementById('registrationForm').classList.add('hidden');
+                document.getElementById('loginForm').classList.remove('hidden');
+                document.querySelector('#loginForm form').reset();
+                document.getElementById('loginMessage').textContent = '';
+            }, 1500);
+        } else {
+            showMessage(messageDiv, data.message || 'Registration failed', 'error');
+        }
+    } catch (error) {
+        showMessage(messageDiv, 'Error connecting to server. Make sure the server is running.', 'error');
+        console.error('Registration error:', error);
     }
-
-    // Create new user
-    const newUser = {
-        id: Date.now(),
-        name: name,
-        email: email,
-        password: btoa(password), // Simple encoding (not secure for production)
-        joinDate: new Date().toLocaleDateString()
-    };
-
-    // Save user to localStorage
-    const users = getUsers();
-    users.push(newUser);
-    saveUsers(users);
-
-    // Show success message and redirect to login
-    showMessage(messageDiv, 'Registration successful! Redirecting to login...', 'success');
-    
-    setTimeout(() => {
-        document.getElementById('registrationForm').classList.add('hidden');
-        document.getElementById('loginForm').classList.remove('hidden');
-        document.querySelector('#loginForm form').reset();
-        document.getElementById('loginMessage').textContent = '';
-    }, 1500);
 }
 
 // Handle login
-function handleLogin(event) {
+async function handleLogin(event) {
     event.preventDefault();
 
     const email = document.getElementById('loginEmail').value.trim();
@@ -160,28 +140,33 @@ function handleLogin(event) {
         return;
     }
 
-    // Find user
-    const users = getUsers();
-    const user = users.find(u => u.email === email && u.password === btoa(password));
+    try {
+        const response = await fetch(`${API_URL}/login`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ email, password })
+        });
 
-    if (!user) {
-        showMessage(messageDiv, 'Invalid email or password', 'error');
-        return;
+        const data = await response.json();
+
+        if (data.success) {
+            // Save user to sessionStorage
+            setCurrentUser(data.user);
+            
+            showMessage(messageDiv, 'Login successful! Redirecting...', 'success');
+
+            setTimeout(() => {
+                showDashboard();
+            }, 800);
+        } else {
+            showMessage(messageDiv, data.message || 'Login failed', 'error');
+        }
+    } catch (error) {
+        showMessage(messageDiv, 'Error connecting to server. Make sure the server is running on port 5000.', 'error');
+        console.error('Login error:', error);
     }
-
-    // Successful login
-    setCurrentUser({
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        joinDate: user.joinDate
-    });
-
-    showMessage(messageDiv, 'Login successful! Redirecting...', 'success');
-
-    setTimeout(() => {
-        showDashboard();
-    }, 800);
 }
 
 // Show dashboard
@@ -224,7 +209,6 @@ function showMessage(element, message, type) {
 
 // Check if user is already logged in when page loads
 window.addEventListener('DOMContentLoaded', () => {
-    initializeStorage();
     const currentUser = getCurrentUser();
     if (currentUser) {
         showDashboard();
